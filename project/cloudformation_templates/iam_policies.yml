@@ -1,0 +1,177 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Resources:
+  AnlystIAMPolicy: 
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub "enterprise-analyst-policy"
+      Path: "/SecurityIAMCourse2/"
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+            - Sid: S3AnalystGetObjectsByRole
+              Effect: Allow
+              Action:
+                - "s3:ListObjects"
+                - "s3:ListObjectsV2"
+                - "s3:GetObject"
+                - "s3:GetObjects"
+              Resource:
+                - !Sub 'arn:aws:s3:::legacy-developer-bucket-${AWS::AccountId}/*'
+              Condition:
+                StringEquals:
+                  s3:ExistingObjectTag/Role: "analyst"
+            - Sid: S3AnalystUploadObjectsByRole
+              Effect: Allow
+              Action:
+                - "s3:PutObject*"
+              Resource:
+                - !Sub 'arn:aws:s3:::legacy-developer-bucket-${AWS::AccountId}/*'
+              Condition:
+                StringEquals:
+                  s3:RequestObjectTag/Role: "analyst"
+            - Sid: S3BucketReadAccess
+              Effect: Allow
+              Action:
+                - "s3:ListAllMyBuckets"
+                - "s3:ListBucket"
+              Resource: '*'
+            - Sid: AnalyticsReportBucketAccess
+              Effect: Allow
+              Action: [
+                  "s3:ListObjects",
+                  "s3:ListObjectsV2",
+                  "s3:GetObject",
+                  "s3:GetObjects",
+              ]
+              Resource: 
+                - !Sub 'arn:aws:s3:::analytics-report-bucket-${AWS::AccountId}' 
+                - !Sub 'arn:aws:s3:::analytics-report-bucket-${AWS::AccountId}/*'
+              Condition:
+                StringEquals:
+                    s3:ExistingObjectTag/Stage: "ObfuscatedReportReady"
+            - Sid: AnalyticsSQSAccess
+              Effect: Allow
+              Action: [
+                  "sqs:PutMessage"
+              ]
+              Resource: 
+                - 'arn:aws:sqs:us-east-2::analytics-queue'
+  FinanceIAMPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      Path: "/SecurityIAMCourse2/"
+      ManagedPolicyName: !Sub "enterprise-finance-policy"
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+            - Sid: BillingForAccountAccess
+              Effect: Allow
+              Action: ["aws-portal:ViewBilling"]
+              Resource: '*'
+            - Sid: S3FinanceObjectsByUserAccess
+              Effect: Allow
+              Action: ["s3:PutObject", "s3:GetObject", "s3:DeleteObject"]
+              Resource: 'arn:aws:s3:::legacy-developer-bucket-${AWS::AccountId}/*'
+              Condition:
+                StringEquals:
+                    s3:ExistingObjectTag/Owner: "${aws:username}"
+  DeveloperIAMPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      Path: "/SecurityIAMCourse2/"
+      ManagedPolicyName: "enterprise-developer-policy"
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: S3DeveloperGetObjectsByRole
+            Effect: Allow
+            Action:
+              - "s3:ListObjects"
+              - "s3:ListObjectsV2"
+              - "s3:GetObject"
+              - "s3:GetObjects"
+            Resource:
+              - !Sub 'arn:aws:s3:::legacy-developer-bucket-${AWS::AccountId}/*'
+            Condition:
+              StringEquals:
+                s3:ExistingObjectTag/Role: "developer"
+          - Sid: S3DeveloperUploadObjectsByRole
+            Effect: Allow
+            Action:
+              - "s3:PutObject*"
+            Resource:
+              - !Sub 'arn:aws:s3:::legacy-developer-bucket-${AWS::AccountId}/*'
+            Condition:
+              StringEquals:
+                s3:RequestObjectTag/Role: "developer"
+          - Sid: S3BucketReadAccess
+            Effect: Allow
+            Action:
+              - "s3:ListAllMyBuckets"
+              - "s3:ListBucket"
+            Resource: '*'
+          - Sid: Ec2MonitorAccess
+            Effect: Allow
+            Action:
+              - "ec2:Describe*"
+            Resource: '*'
+          - Sid: CloudWatchReadAccess
+            Effect: Allow
+            Action: 
+              - "autoscaling:Describe*"
+              - "cloudwatch:Describe*"
+              - "cloudwatch:Get*"
+              - "cloudwatch:List*"
+              - "sns:Get*"
+              - "sns:List*"
+            Resource: '*'
+          - Sid: DeveloperWebhookPermissions
+            Effect: Allow
+            Action:
+              - "sns:Publish"
+            Resource: !Sub 'arn:aws:sns:us-east-2:${AWS::AccountId}:developer-webhooks'
+  RestrictionsIAMPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      Path: "/SecurityIAMCourse2/"
+      ManagedPolicyName: "enterprise-restrictions-policy"
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: "DenyAllOutsideRequestedRegions"
+            Effect: Deny
+            NotAction:
+              - "cloudfront:*"
+              - "iam:*"
+              - "route53:*"
+              - "support:*"
+            Resource: '*'
+            Condition:
+              StringNotEquals:
+                aws:RequestedRegion:
+                  - "us-east-1"
+                  - "us-east-2"
+                  - "us-west-1"
+                  - "us-west-2"
+          - Sid: "DenyS3Resources"
+            Effect: Deny
+            Resource:
+              - "arn:aws:s3:::*"
+            Action:
+              - "s3:*"
+  BadIAMPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      Path: "/SecurityIAMCourse2/"
+      ManagedPolicyName: !Sub "bad-policy-that-breaks-enterprise-restrictions"
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: "AccessToRestrictedResource"
+            Effect: Allow
+            Resource:
+              - "arn:aws:s3:::super-secret-bucket"
+            Action:
+              - "s3:Get*"
+              - "s3:List*"
