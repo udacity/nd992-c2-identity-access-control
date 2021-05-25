@@ -1,0 +1,58 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Resources:
+  AnalystRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal: 
+              AWS:
+                - !Sub "arn:aws:iam::${AWS::AccountId}:root"
+            Action: 
+              - "sts:AssumeRole"
+      RoleName: !Sub "enterprise-analyst-role"
+      Tags:
+        - Key: "ResourceType"
+          Value: "IAMRole"
+        - Key: "UdacityCourse"
+          Value: "SecurityIAMCourse2"
+  FinanceRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          -
+            Effect: "Allow"
+            Principal: 
+              AWS:
+                - !Sub "arn:aws:iam::${AWS::AccountId}:root"
+            Action: 
+              - "sts:AssumeRole"
+      RoleName: !Sub "enterprise-finance-role"
+      Tags:
+        - Key: "ResourceType"
+          Value: "IAMRole"
+        - Key: "UdacityCourse"
+          Value: "SecurityIAMCourse2"
+  DeveloperRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal: 
+              AWS:
+                - !Sub "arn:aws:iam::${AWS::AccountId}:root"
+            Action: 
+              - "sts:AssumeRole"
+      RoleName: !Sub "enterprise-developer-role"
+      Tags:
+        - Key: "ResourceType"
+          Value: "IAMRole"
+        - Key: "UdacityCourse"
+          Value: "SecurityIAMCourse2"

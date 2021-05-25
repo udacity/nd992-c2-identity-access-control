@@ -1,0 +1,11 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Resources:
+  LegacyDeveloperS3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "legacy-developer-bucket-${AWS::AccountId}"
+  AnalyticsReportBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "analytics-report-bucket-${AWS::AccountId}"
