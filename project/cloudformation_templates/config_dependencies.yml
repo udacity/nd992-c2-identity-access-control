@@ -38,6 +38,7 @@ Resources:
   EnterprisePolicyValidation:
     Type: AWS::Lambda::Function
     Properties:
+      FunctionName: "config-rule-enforcement"
       Code:
         ZipFile: !Sub |
           import json
