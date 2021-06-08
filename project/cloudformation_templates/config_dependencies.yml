@@ -1,5 +1,9 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Resources:
+  AlertingSnsTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      DisplayName: "aws-config-alerting-topic"
   ConfigRecorder:
     Type: AWS::Config::ConfigurationRecorder
     Properties:
@@ -41,20 +45,23 @@ Resources:
       FunctionName: "config-rule-enforcement"
       Code:
         ZipFile: !Sub |
+          import os
           import json
           import boto3
           import datetime
           from urllib.parse import unquote
           
           RESTRICTED_RESOURCES = []
-          
+          ALERTING_ENABLED = False
 
           def handler(event, context):
               print(event)
               invoking_event = json.loads(event["invokingEvent"])
               resource_type = invoking_event["configurationItem"]["resourceType"]
               resource_id = invoking_event["configurationItem"]["resourceId"]
-          
+              resource_arn = invoking_event["configurationItem"]["ARN"]
+              restricted_resources_enabled = []
+  
               if resource_type == "AWS::IAM::Policy":
                   configuration = invoking_event.get("configurationItem", {}).get("configuration")
                   if configuration:
@@ -81,10 +88,22 @@ Resources:
                                       ],
                                       ResultToken=event["resultToken"]
                                   )
+                                  restricted_resources_enabled.append(resource_arn)
+              if ALERTING_ENABLED and restricted_resources_enabled:
+                print("ALERTING SNS")
+                sns_client = boto3.client("sns")
+                sns_client.publish(
+                  TopicArn=os.environ["SNS_TOPIC"],
+                  Message=f'The following policies have restricted resources enabled {restricted_resources_enabled}'
+                )
+  
       Handler: index.handler
       Runtime: python3.8
       Timeout: '30'
       Role: !GetAtt [LambdaExecutionRole, Arn]
+      Environment:
+        Variables:
+          SNS_TOPIC: !Ref AlertingSnsTopic
   LambdaExecutionRole:
     Type: AWS::IAM::Role
     Properties:
@@ -103,6 +122,9 @@ Resources:
           - Effect: Allow
             Action: ['logs:*', 'config:PutEvaluations']
             Resource: '*'
+          - Effect: Allow
+            Action: ['SNS:Publish']
+            Resource: !Ref AlertingSnsTopic
   ConfigRole:
     Type: AWS::IAM::Role
     Properties:
