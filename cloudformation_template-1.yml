@@ -1,0 +1,178 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Resources:
+  ConfigRecorder:
+    Type: AWS::Config::ConfigurationRecorder
+    Properties:
+      Name: DefaultRecorder
+      RecordingGroup:
+        ResourceTypes: 
+          - "AWS::IAM::Policy"
+      RoleARN: !GetAtt [ConfigRole, Arn]
+  DefaultConfigBucket:
+    Type: AWS::S3::Bucket
+  DeliveryChannel:
+    Type: AWS::Config::DeliveryChannel
+    Properties:
+      ConfigSnapshotDeliveryProperties:
+        DeliveryFrequency: Six_Hours
+      S3BucketName: !Ref 'DefaultConfigBucket'
+  ConfigRuleForIAMPolicies:
+    Type: AWS::Config::ConfigRule
+    Properties:
+      ConfigRuleName: ConfigRulePolicyEnforcement
+      Scope:
+        ComplianceResourceTypes: ['AWS::IAM::Policy']
+      Source:
+        Owner: CUSTOM_LAMBDA
+        SourceDetails:
+        - EventSource: aws.config
+          MessageType: ConfigurationItemChangeNotification
+        SourceIdentifier: !GetAtt [EnterprisePolicyValidation, Arn]
+    DependsOn: [PermissionToCallLambda, ConfigRecorder]
+  PermissionToCallLambda:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt [EnterprisePolicyValidation, Arn]
+      Action: lambda:InvokeFunction
+      Principal: config.amazonaws.com
+  EnterprisePolicyValidation:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: "config-rule-enforcement"
+      Code:
+        ZipFile: !Sub |
+          import os
+          import json
+          import boto3
+          import datetime
+          from urllib.parse import unquote
+          
+          RESTRICTED_RESOURCES = ["arn:aws:s3:::bucket-with-pii"]
+          ALERTING_ENABLED = False
+          def handler(event, context):
+              print(event)
+              invoking_event = json.loads(event["invokingEvent"])
+              resource_type = invoking_event["configurationItem"]["resourceType"]
+              resource_id = invoking_event["configurationItem"]["resourceId"]
+              resource_arn = invoking_event["configurationItem"]["ARN"]
+              restricted_resources_enabled = []
+  
+              if resource_type == "AWS::IAM::Policy":
+                  configuration = invoking_event.get("configurationItem", {}).get("configuration")
+                  if configuration:
+                    policy_version_list = configuration.get("policyVersionList", [])
+                    default_version = False
+                    for version in policy_version_list:
+                        if version.get("isDefaultVersion", False):
+                            default_version = version
+                    if default_version:
+                      policy = json.loads(unquote(default_version["document"]))
+                      if type(policy["Statement"]) is list:
+                          for statement in policy["Statement"]:
+                              if any(resource in RESTRICTED_RESOURCES for resource in statement.get("Resource", [])):
+                                  client = boto3.client("config")
+                                  client.put_evaluations(
+                                      Evaluations=[
+                                          {
+                                              'ComplianceResourceType': resource_type,
+                                              'ComplianceResourceId': resource_id,
+                                              'ComplianceType': 'NON_COMPLIANT',
+                                              'Annotation': f'The policy has a restricted resource listed',
+                                              'OrderingTimestamp': datetime.datetime.now()
+                                          },
+                                      ],
+                                      ResultToken=event["resultToken"]
+                                  )
+                                  restricted_resources_enabled.append(resource_arn)
+              if ALERTING_ENABLED and restricted_resources_enabled:
+                print("ALERTING SNS")
+                sns_client = boto3.client("sns")
+                sns_client.publish(
+                  TopicArn=os.environ["SNS_TOPIC"],
+                  Message=f'The following policies have restricted resources enabled {restricted_resources_enabled}'
+                )
+  
+      Handler: index.handler
+      Runtime: python3.8
+      Timeout: '30'
+      Role: !GetAtt [LambdaExecutionRole, Arn]
+      Environment:
+        Variables:
+          Environment: "test"
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service: [lambda.amazonaws.com]
+          Action: ['sts:AssumeRole']
+      Policies:
+      - PolicyName: root
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action: ['logs:*', 'config:PutEvaluations']
+            Resource: '*'
+  BadIAMPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      Path: "/SecurityIAMCourse2/"
+      ManagedPolicyName: !Sub "enterprise-sre-team-policy"
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: "AccessToRestrictedResource"
+            Effect: Allow
+            Resource:
+              - "arn:aws:s3:::bucket-with-pii"
+            Action:
+              - "s3:Get*"
+              - "s3:List*"
+          - Sid: Ec2MonitorAccess
+            Effect: Allow
+            Action:
+              - "ec2:Describe*"
+            Resource: '*'
+          - Sid: CloudWatchReadAccess
+            Effect: Allow
+            Action: 
+              - "autoscaling:Describe*"
+              - "cloudwatch:Describe*"
+              - "cloudwatch:Get*"
+              - "cloudwatch:List*"
+              - "sns:Get*"
+              - "sns:List*"
+            Resource: "*"
+  ConfigRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service: [config.amazonaws.com]
+          Action: ['sts:AssumeRole']
+      ManagedPolicyArns: ['arn:aws:iam::aws:policy/service-role/AWSConfigRole']
+      Policies:
+      - PolicyName: root
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action: s3:GetBucketAcl
+            Resource: !Join ['', ['arn:aws:s3:::', !Ref 'DefaultConfigBucket']]
+          - Effect: Allow
+            Action: s3:PutObject
+            Resource: !Join ['', ['arn:aws:s3:::', !Ref 'DefaultConfigBucket', /AWSLogs/,
+                !Ref 'AWS::AccountId', /*]]
+            Condition:
+              StringEquals:
+                s3:x-amz-acl: bucket-owner-full-control
+          - Effect: Allow
+            Action: config:Put*
+            Resource: '*'
