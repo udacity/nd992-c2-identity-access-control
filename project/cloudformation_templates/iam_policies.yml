@@ -67,7 +67,19 @@ Resources:
         Statement:
             - Sid: BillingForAccountAccess
               Effect: Allow
-              Action: ["aws-portal:ViewBilling"]
+              Action: [
+                "freetier:Get*",
+                "invoicing:List*", 
+                "invoicing:Get*", 
+                "billing:Get*", 
+                "account:GetAccountInformation", 
+                "cur:Get*",
+                "cur:Validate*", 
+                "ce:*",
+                "consolidatedbilling:Get*", 
+                "consolidatedbilling:List*", 
+                "pricing:DescribeServices"
+              ]
               Resource: '*'
             - Sid: S3FinanceObjectsByUserAccess
               Effect: Allow
